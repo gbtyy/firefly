@@ -17,9 +17,7 @@ public class ArrayProxyFactoryUsingJavassist extends AbstractArrayProxyFactory {
 	private static final Map<Class<?>, ArrayProxy> arrayCache = new ConcurrentHashMap<Class<?>, ArrayProxy>();
 	public static final ArrayProxyFactoryUsingJavassist INSTANCE = new ArrayProxyFactoryUsingJavassist();
 	
-	private ArrayProxyFactoryUsingJavassist() {
-		
-	}
+	private ArrayProxyFactoryUsingJavassist() {}
 	
 	@Override
 	public ArrayProxy getArrayProxy(Class<?> clazz) throws Throwable {
@@ -54,7 +52,7 @@ public class ArrayProxyFactoryUsingJavassist extends AbstractArrayProxyFactory {
 		cc.addMethod(CtMethod.make(createArrayGetCode(clazz), cc));
 		cc.addMethod(CtMethod.make(createArraySetCode(clazz), cc));
 		
-		ArrayProxy ret = (ArrayProxy) cc.toClass().getConstructor().newInstance();
+		ArrayProxy ret = (ArrayProxy) cc.toClass(classLoader, null).getConstructor().newInstance();
 //		long end = System.currentTimeMillis();
 //		System.out.println("Javassist generates class proxy time -> " + (end - start));
 		return ret;

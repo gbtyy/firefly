@@ -17,7 +17,7 @@ import com.firefly.net.Config;
 import com.firefly.net.Server;
 import com.firefly.net.support.wrap.client.SimpleTcpClient;
 import com.firefly.net.support.wrap.client.TcpConnection;
-import com.firefly.net.tcp.TcpServer;
+import com.firefly.net.tcp.nio.TcpServer;
 import com.firefly.utils.log.Log;
 import com.firefly.utils.log.LogFactory;
 
@@ -36,7 +36,7 @@ public class TestTcpClientAndServer {
 
 		final int LOOP = 50;
 		ExecutorService executorService = Executors.newFixedThreadPool(LOOP);
-		final SimpleTcpClient client = new SimpleTcpClient("localhost", 9900, new StringLineDecoder(), new StringLineEncoder(), new PipelineClientHandler());
+		final SimpleTcpClient client = new SimpleTcpClient("localhost", 9900, new StringLineDecoder(), new StringLineEncoder(), new PipelineClientHandler(), "nio");
 
 		for (int i = 0; i < LOOP; i++) {
 			executorService.submit(new Runnable() {

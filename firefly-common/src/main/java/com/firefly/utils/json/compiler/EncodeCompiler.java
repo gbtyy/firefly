@@ -6,6 +6,7 @@ import java.lang.reflect.Modifier;
 import java.util.Set;
 import java.util.TreeSet;
 
+import com.firefly.utils.json.annotation.DateFormat;
 import com.firefly.utils.json.annotation.Transient;
 import com.firefly.utils.json.serializer.SerialStateMachine;
 import com.firefly.utils.json.support.FieldInvoke;
@@ -24,26 +25,34 @@ public class EncodeCompiler {
 			method.setAccessible(true);
 			String methodName = method.getName();
 			
+			if (method.getDeclaringClass().equals(Object.class)) continue;
 			if (method.getName().length() < 3) continue;
             if (Modifier.isStatic(method.getModifiers())) continue;
             if (Modifier.isAbstract(method.getModifiers())) continue;
-            if (method.getName().equals("getClass")) continue;
-            if (!method.getName().startsWith("is") && !method.getName().startsWith("get")) continue;
+            if (!method.getName().startsWith("get") && !method.getName().startsWith("is")) continue;
             if (method.getParameterTypes().length != 0) continue;
             if (method.getReturnType() == void.class) continue;
             if (method.isAnnotationPresent(Transient.class)) continue;
 
             String propertyName = null;
-			if (methodName.charAt(0) == 'g') {
-				if (methodName.length() < 4 || !Character.isUpperCase(methodName.charAt(3)))
+			if (methodName.charAt(0) == 'g') { // start with 'get'
+				if (methodName.length() < 4)
 					continue;
 
-				propertyName = Character.toLowerCase(methodName.charAt(3)) + methodName.substring(4);
-			} else {
-				if (methodName.length() < 3 || !Character.isUpperCase(methodName.charAt(2)))
+				if(Character.isUpperCase(methodName.charAt(3))) {
+					propertyName = Character.toLowerCase(methodName.charAt(3)) + methodName.substring(4);
+				} else {
+					propertyName = methodName.substring(3);
+				}
+			} else { // start with 'is'
+				if (methodName.length() < 3)
 					continue;
 
-				propertyName = Character.toLowerCase(methodName.charAt(2)) + methodName.substring(3);
+				if(Character.isUpperCase(methodName.charAt(2))) {
+					propertyName = Character.toLowerCase(methodName.charAt(2)) + methodName.substring(3);
+				} else {
+					propertyName = methodName.substring(2);
+				}
 			}
 			
 			Field field = null;
@@ -63,11 +72,19 @@ public class EncodeCompiler {
 			fieldMetaInfo.setPropertyName(propertyName, false);
 			fieldMetaInfo.setPropertyInvoke(new MethodInvoke(method));
 			
-			fieldMetaInfo.setSerializer(SerialStateMachine.getSerializerInCompiling(fieldClazz));
+			DateFormat d = null;
+			if(field != null) {
+				d = field.getAnnotation(DateFormat.class);
+			}
+			if(d == null) {
+				d = method.getAnnotation(DateFormat.class);
+			}
+			
+			fieldMetaInfo.setSerializer(SerialStateMachine.getSerializer(fieldClazz, d));
 			fieldSet.add(fieldMetaInfo);
 		}
 		
-		for(Field field : clazz.getFields()) { // public字段序列化构造
+		for(Field field : clazz.getFields()) { // construct public field serializer
 			if(Modifier.isTransient(field.getModifiers()) || field.isAnnotationPresent(Transient.class) || Modifier.isStatic(field.getModifiers()))
 				continue;
 			
@@ -75,7 +92,7 @@ public class EncodeCompiler {
 			SerializerMetaInfo fieldMetaInfo = new SerializerMetaInfo();
 			fieldMetaInfo.setPropertyName(field.getName(), false);
 			fieldMetaInfo.setPropertyInvoke(new FieldInvoke(field));
-			fieldMetaInfo.setSerializer(SerialStateMachine.getSerializerInCompiling(field.getType()));
+			fieldMetaInfo.setSerializer(SerialStateMachine.getSerializer(field.getType(), field.getAnnotation(DateFormat.class)));
 			fieldSet.add(fieldMetaInfo);
 		}
 		

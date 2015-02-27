@@ -15,36 +15,44 @@ import com.firefly.server.session.HttpSessionManager;
 import com.firefly.server.session.LocalHttpSessionManager;
 
 public class Config {
+	
+	// server basic settings
 	private String configFileName = "firefly.xml";
 	private String encoding = "UTF-8";
 	private Map<Integer, String> errorPage;
+	private String serverHome, host, servletPath = "", contextPath = "", tempdir;
+	private int port;
 	
+	// HTTP settings
 	private int maxRequestLineLength = 8 * 1024,
 				maxRequestHeadLength = 16 * 1024, 
 				maxRangeNum = 8,
 				writeBufferSize = 8 * 1024,
 				maxConnections = 2000,
-				maxConnectionTimeout = 10 * 1000,
-				
-				corePoolSize = Runtime.getRuntime().availableProcessors() * 2,
-                maximumPoolSize = 128, 
-                poolQueueSize = 50000;
-	
-	private long poolKeepAliveTime = 30 * 1000,
-				 poolWaitTimeout = 3 * 1000;
-	
+				maxConnectionTimeout = 10 * 1000;
 	private long maxUploadLength = 50 * 1024 * 1024;
 	private int httpBodyThreshold = 4 * 1024 * 1024;
 	private boolean keepAlive = true;
-	private boolean enableThreadPool = true;
-	private int asynchronousContextTimeout = 6 * 1000;
-
-	private String serverHome, host, servletPath = "", contextPath = "", tempdir;
-	private int port;
 	
+	// request handler thread pool settings
+	private int	corePoolSize = Runtime.getRuntime().availableProcessors(),
+                maximumPoolSize = 64, 
+                poolQueueSize = 0;
+	private long poolKeepAliveTime = 15 * 1000,
+				 poolWaitTimeout = 3 * 1000;
+	private int asynchronousContextTimeout = 6 * 1000;
+	private String requestHandler = "currentThread"; // threadPool, currentThread
+	
+	// asynchronous I/O thread pool settings
+	private String netProcessorType = "aio"; // nio, aio
+	private int asynchronousMaximumPoolSize = 64;
+	private int asynchronousPoolKeepAliveTime = 15 * 1000;
+	
+	// SSL/TLS settings
 	private boolean secure = false;
 	private String credentialPath, keystorePassword, keyPassword;
 	
+	// session settings
 	private String sessionIdName = "jsessionid";
 	private int maxSessionInactiveInterval = 10 * 60;
 	private HttpSessionManager httpSessionManager = new LocalHttpSessionManager(this);
@@ -288,14 +296,6 @@ public class Config {
 		this.keepAlive = keepAlive;
 	}
 
-	public boolean isEnableThreadPool() {
-		return enableThreadPool;
-	}
-
-	public void setEnableThreadPool(boolean enableThreadPool) {
-		this.enableThreadPool = enableThreadPool;
-	}
-
 	public Map<Integer, String> getErrorPage() {
 		return errorPage;
 	}
@@ -406,4 +406,37 @@ public class Config {
 		this.asynchronousContextTimeout = asynchronousContextTimeout;
 	}
 
+	public String getRequestHandler() {
+		return requestHandler;
+	}
+
+	public void setRequestHandler(String requestHandler) {
+		this.requestHandler = requestHandler;
+	}
+
+	public String getNetProcessorType() {
+		return netProcessorType;
+	}
+
+	public void setNetProcessorType(String netProcessorType) {
+		this.netProcessorType = netProcessorType;
+	}
+
+	public int getAsynchronousMaximumPoolSize() {
+		return asynchronousMaximumPoolSize;
+	}
+
+	public void setAsynchronousMaximumPoolSize(int asynchronousMaximumPoolSize) {
+		this.asynchronousMaximumPoolSize = asynchronousMaximumPoolSize;
+	}
+
+	public int getAsynchronousPoolKeepAliveTime() {
+		return asynchronousPoolKeepAliveTime;
+	}
+
+	public void setAsynchronousPoolKeepAliveTime(int asynchronousPoolKeepAliveTime) {
+		this.asynchronousPoolKeepAliveTime = asynchronousPoolKeepAliveTime;
+	}
+
+	
 }

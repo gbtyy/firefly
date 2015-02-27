@@ -1,4 +1,4 @@
-package com.firefly.net.tcp;
+package com.firefly.net.tcp.nio;
 
 import static com.firefly.net.tcp.TcpPerformanceParameter.BACKLOG;
 import static com.firefly.net.tcp.TcpPerformanceParameter.BANDWIDTH;
@@ -152,7 +152,7 @@ public class TcpServer implements Server {
 			try {
 				int workerIndex = Math.abs(sessionId) % workers.length;
 				log.debug("accept sessionId [{}] and worker index [{}]", sessionId, workerIndex);
-				workers[workerIndex].registerSelectableChannel(socketChannel, sessionId);
+				workers[workerIndex].registerChannel(socketChannel, sessionId);
 			} catch (Exception e) {
 				log.error("Failed to initialize an accepted socket.", e);
 				try {

@@ -20,9 +20,7 @@ public class FieldProxyFactoryUsingJavassist extends AbstractFieldProxyFactory {
 	private static final Map<Field, FieldProxy> fieldCache = new ConcurrentHashMap<Field, FieldProxy>();
 	public static final FieldProxyFactoryUsingJavassist INSTANCE = new FieldProxyFactoryUsingJavassist();
 
-	private FieldProxyFactoryUsingJavassist() {
-		
-	}
+	private FieldProxyFactoryUsingJavassist() {}
 	
 	@Override
 	public FieldProxy getFieldProxy(Field field) throws Throwable {
@@ -46,21 +44,21 @@ public class FieldProxyFactoryUsingJavassist extends AbstractFieldProxyFactory {
 //		long start = System.currentTimeMillis();
 		ClassPool classPool = ClassPool.getDefault();
 		classPool.insertClassPath(new ClassClassPath(FieldProxy.class));
-		classPool.importPackage(Field.class.getCanonicalName());
+//		classPool.importPackage(Field.class.getCanonicalName());
 		
 		CtClass cc = classPool.makeClass("com.firefly.utils.ProxyField" + UUID.randomUUID().toString().replace("-", ""));
 		cc.addInterface(classPool.get(FieldProxy.class.getName()));
-		cc.addField(CtField.make("private Field field;", cc));
+		cc.addField(CtField.make("private java.lang.reflect.Field field;", cc));
 		
 		CtConstructor constructor = new CtConstructor(new CtClass[]{classPool.get(Field.class.getName())}, cc);
-		constructor.setBody("{this.field = (Field)$1;}");
+		constructor.setBody("{this.field = (java.lang.reflect.Field)$1;}");
 		cc.addConstructor(constructor);
 		
-		cc.addMethod(CtMethod.make("public Field field(){return field;}", cc));
+		cc.addMethod(CtMethod.make("public java.lang.reflect.Field field(){return field;}", cc));
 		cc.addMethod(CtMethod.make(createFieldGetterMethodCode(field), cc));
 		cc.addMethod(CtMethod.make(createFieldSetterMethodCode(field), cc));
 		
-		FieldProxy ret = (FieldProxy) cc.toClass().getConstructor(Field.class).newInstance(field);
+		FieldProxy ret = (FieldProxy) cc.toClass(classLoader, null).getConstructor(Field.class).newInstance(field);
 //		long end = System.currentTimeMillis();
 //		System.out.println("Javassist generates class proxy time -> " + (end - start));
 		return ret;

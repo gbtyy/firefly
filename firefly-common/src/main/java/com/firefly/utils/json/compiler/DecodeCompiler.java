@@ -10,6 +10,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.TreeSet;
 
+import com.firefly.utils.json.annotation.DateFormat;
 import com.firefly.utils.json.annotation.Transient;
 import com.firefly.utils.json.exception.JsonException;
 import com.firefly.utils.json.parser.CollectionParser;
@@ -30,17 +31,17 @@ public class DecodeCompiler {
 			method.setAccessible(true);
 			String methodName = method.getName();
 			
+			if (method.getDeclaringClass().equals(Object.class)) continue;
 			if (method.getName().length() < 4) continue;
             if (!method.getName().startsWith("set")) continue;
             if (method.getParameterTypes().length != 1) continue;
             if (Modifier.isStatic(method.getModifiers())) continue;
             if (Modifier.isAbstract(method.getModifiers())) continue;
             if (method.isAnnotationPresent(Transient.class)) continue;
-            
-            if (methodName.length() < 4 || !Character.isUpperCase(methodName.charAt(3)))
-				continue;
+            if (methodName.length() < 4) continue;
             
             String propertyName = Character.toLowerCase(methodName.charAt(3)) + methodName.substring(4);
+//            System.out.println(propertyName);
             Field field = null;
 			try {
 				field = clazz.getDeclaredField(propertyName);
@@ -71,7 +72,7 @@ public class DecodeCompiler {
             	Type elementType = types2[0];
             	parserMetaInfo.setType(ComplexTypeParser.getImplClass(type));
             	parserMetaInfo.setParser(new CollectionParser(elementType));
-            } else if (Map.class.isAssignableFrom(type)) { // Map元信息构造
+            } else if (Map.class.isAssignableFrom(type)) { // construct map meta information
             	Type[] types = method.getGenericParameterTypes();
             	if(types.length != 1 || !(types[0] instanceof ParameterizedType))
             		throw new JsonException("not support the " + method);
@@ -88,14 +89,22 @@ public class DecodeCompiler {
             	Type elementType = types2[1];
             	parserMetaInfo.setType(ComplexTypeParser.getImplClass(type));
             	parserMetaInfo.setParser(new MapParser(elementType));
-            } else { // 获取对象、枚举或者数组Parser
+            } else { // get array, object or enumeration parser
+            	DateFormat d = null;
+    			if(field != null) {
+    				d = field.getAnnotation(DateFormat.class);
+    			}
+    			if(d == null) {
+    				d = method.getAnnotation(DateFormat.class);
+    			}
+            	
             	parserMetaInfo.setType(type);
-            	parserMetaInfo.setParser(ParserStateMachine.getParser(type)); 
+            	parserMetaInfo.setParser(ParserStateMachine.getParser(type, d)); 
             }
             fieldSet.add(parserMetaInfo);
 		}
 		
-		for(Field field : clazz.getFields()) { // public字段反序列化构造
+		for(Field field : clazz.getFields()) { // construct public field parser
 			if(Modifier.isTransient(field.getModifiers()) || field.isAnnotationPresent(Transient.class) || Modifier.isStatic(field.getModifiers()))
 				continue;
 			
@@ -119,7 +128,7 @@ public class DecodeCompiler {
             	Type elementType = types2[0];
             	parserMetaInfo.setType(ComplexTypeParser.getImplClass(type));
             	parserMetaInfo.setParser(new CollectionParser(elementType));
-            } else if (Map.class.isAssignableFrom(type)) { // Map元信息构造
+            } else if (Map.class.isAssignableFrom(type)) { // construct map meta information
             	Type fieldType = field.getGenericType();
             	if(!(fieldType instanceof ParameterizedType))
             		throw new JsonException("not support the " + field);
@@ -136,9 +145,9 @@ public class DecodeCompiler {
             	Type elementType = types2[1];
             	parserMetaInfo.setType(ComplexTypeParser.getImplClass(type));
             	parserMetaInfo.setParser(new MapParser(elementType));
-            } else { // 获取对象、枚举或者数组Parser
+            } else { // get array, object or enumeration parser
             	parserMetaInfo.setType(type);
-            	parserMetaInfo.setParser(ParserStateMachine.getParser(type));
+            	parserMetaInfo.setParser(ParserStateMachine.getParser(type, field.getAnnotation(DateFormat.class)));
             }
             fieldSet.add(parserMetaInfo);
 		}

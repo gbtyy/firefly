@@ -1,4 +1,4 @@
-package com.firefly.net.tcp;
+package com.firefly.net.tcp.nio;
 
 import java.io.IOException;
 import java.net.InetSocketAddress;
@@ -8,6 +8,7 @@ import java.nio.channels.Selector;
 import java.nio.channels.SocketChannel;
 import java.util.Iterator;
 import java.util.Queue;
+import java.util.concurrent.LinkedTransferQueue;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -19,7 +20,6 @@ import com.firefly.net.EventManager;
 import com.firefly.net.Handler;
 import com.firefly.net.Worker;
 import com.firefly.net.event.DefaultEventManager;
-import com.firefly.utils.collection.LinkedTransferQueue;
 import com.firefly.utils.log.Log;
 import com.firefly.utils.log.LogFactory;
 import com.firefly.utils.time.Millisecond100Clock;
@@ -40,11 +40,18 @@ public class TcpClient implements Client {
     }
 
     public TcpClient(Decoder decoder, Encoder encoder, Handler handler) {
-        this();
         config = new Config();
         config.setDecoder(decoder);
         config.setEncoder(encoder);
         config.setHandler(handler);
+    }
+    
+    public TcpClient(Decoder decoder, Encoder encoder, Handler handler, int timeout) {
+        config = new Config();
+        config.setDecoder(decoder);
+        config.setEncoder(encoder);
+        config.setHandler(handler);
+        config.setTimeout(timeout);
     }
 
     private synchronized Client init() throws IOException {
@@ -167,7 +174,7 @@ public class TcpClient implements Client {
         try {
             int workerIndex = Math.abs(sessionId) % workers.length;
             log.debug("accept sessionId [{}] and worker index [{}]", sessionId, workerIndex);
-            workers[workerIndex].registerSelectableChannel(socketChannel, sessionId);
+            workers[workerIndex].registerChannel(socketChannel, sessionId);
         } catch (Exception e) {
             log.error("Failed to initialize an accepted socket.", e);
             try {

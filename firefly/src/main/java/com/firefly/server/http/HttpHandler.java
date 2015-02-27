@@ -9,6 +9,7 @@ import com.firefly.mvc.web.servlet.HttpServletDispatcherController;
 import com.firefly.net.Handler;
 import com.firefly.net.Session;
 import com.firefly.net.tcp.ssl.SSLContextFactory;
+import com.firefly.net.tcp.ssl.SSLEventHandler;
 import com.firefly.net.tcp.ssl.SSLSession;
 import com.firefly.utils.VerifyUtils;
 import com.firefly.utils.log.Log;
@@ -23,7 +24,21 @@ public class HttpHandler implements Handler {
 
 	public HttpHandler(HttpServletDispatcherController servletController, Config config) throws Throwable {
 		httpConnectionListener = config.getHttpConnectionListener();
-		requestHandler = new ThreadPoolRequestHandler(servletController);
+		
+		log.info("request handler [{}]", config.getRequestHandler());
+		ThreadPoolWrapper.init(config);
+		switch (config.getRequestHandler()) {
+		case "threadPool":
+			requestHandler = new ThreadPoolRequestHandler(servletController);
+			break;
+		case "currentThread":
+			requestHandler = new CurrentThreadRequestHandler(servletController);
+			break;
+		default:
+			requestHandler = new CurrentThreadRequestHandler(servletController);
+			break;
+		}
+		
 		if(config.isSecure()) {
 			if(VerifyUtils.isNotEmpty(config.getCredentialPath())
 					&& VerifyUtils.isNotEmpty(config.getKeyPassword())
@@ -42,7 +57,13 @@ public class HttpHandler implements Handler {
 		session.attachObject(sessionAttachment);
 		Monitor.CONN_COUNT.incrementAndGet();
 		if(sslContext != null) {
-			sessionAttachment.sslSession = new SSLSession(sslContext, session);
+			sessionAttachment.sslSession = new SSLSession(sslContext, session, false, new SSLEventHandler(){
+
+				@Override
+				public void handshakeFinished(SSLSession session) {
+					
+					
+				}});
 		}
 		httpConnectionListener.connectionCreated(session);
 	}

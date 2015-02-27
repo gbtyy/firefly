@@ -27,7 +27,7 @@ public class LogDemo {
 		}
 	}
 	
-	public static void main1(String[] args) {
+	public static void main2(String[] args) {
 		try {
 			log.info("test {} aa {}", "log1", 2);
 			log.info("test {} bb {}", "log1", 2);

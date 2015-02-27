@@ -6,6 +6,7 @@ import static org.hamcrest.Matchers.nullValue;
 import java.math.BigDecimal;
 import java.math.BigInteger;
 import java.util.ArrayList;
+import java.util.Calendar;
 import java.util.Date;
 import java.util.HashMap;
 import java.util.LinkedList;
@@ -18,18 +19,24 @@ import org.junit.Test;
 import test.utils.json.ArrayObj;
 import test.utils.json.Bar;
 import test.utils.json.Book;
+import test.utils.json.BookDemo.TestBook;
+import test.utils.json.BookDemo.TestBook2;
 import test.utils.json.CollectionObj;
+import test.utils.json.DateFormatObject;
 import test.utils.json.DateObj;
 import test.utils.json.MapObj;
 import test.utils.json.Profile;
 import test.utils.json.SimpleObj;
 import test.utils.json.SimpleObj2;
+import test.utils.json.SpecialPropertyObject;
 import test.utils.json.User;
 import test.utils.json.github.MediaContent;
 import test.utils.json.github.Player;
 import test.utils.json.github.Size;
 
 import com.firefly.utils.json.Json;
+import com.firefly.utils.json.JsonArray;
+import com.firefly.utils.json.JsonObject;
 import com.firefly.utils.json.io.JsonStringWriter;
 import com.firefly.utils.time.SafeSimpleDateFormat;
 
@@ -371,18 +378,242 @@ public class TestParser {
 		Assert.assertTrue(Json.toObject("[]", Bar[].class) instanceof Bar[]);
 	}
 	
+	@Test
+	public void testGeneralJsonObject() {
+		String json = "{\"key1\":333, \"key2\" : {\"key3\" : \"hello\", \"key4\":\"world\" }, \"booleanKey\" : true }   ";
+		JsonObject jsonObject = Json.toJsonObject(json);
+		
+		Assert.assertThat(jsonObject.getInteger("key1"), is(333));
+		Assert.assertThat(jsonObject.getJsonObject("key2").getString("key3"), is("hello"));
+		Assert.assertThat(jsonObject.getJsonObject("key2").getString("key4"), is("world"));
+		Assert.assertThat(jsonObject.getBoolean("booleanKey"), is(true));
+	}
+	
+	@Test
+	public void testGeneralJsonArray() {
+		String json = "[333,444,{\"key\" : \"hello\"},666]";
+		JsonArray array = Json.toJsonArray(json);
+		
+		Assert.assertThat(array.getInteger(0), is(333));
+		Assert.assertThat(array.getInteger(1), is(444));
+		Assert.assertThat(array.getJsonObject(2).getString("key"), is("hello"));
+		Assert.assertThat(array.getInteger(3), is(666));
+	}
+	
+	@Test
+	public void testMixedGeneralJsonArrayAndJsonObject() {
+		String json = "[333,444,{\"key\" : \"hello\", \"keyObject\" : [\"object0\",\"object1\"  ]},666]";
+		JsonArray array = Json.toJsonArray(json);
+		
+		Assert.assertThat(array.getJsonObject(2).getJsonArray("keyObject").getString(0), is("object0"));
+		Assert.assertThat(array.getJsonObject(2).getJsonArray("keyObject").getString(1), is("object1"));
+		
+		json = "{\"key1\":333, \"arrayKey\":[444, \"array\"], \"key2\" :  {\"key3\" : \"hello\", \"key4\":\"world\" }, \"booleanKey\" : true }   ";
+		JsonObject jsonObject = Json.toJsonObject(json);
+		Assert.assertThat(jsonObject.getJsonArray("arrayKey").getString(1), is("array"));
+		Assert.assertThat(jsonObject.getJsonObject("key2").getString("key4"), is("world"));
+	}
+	
+	@Test
+	public void testDateFormat() {
+		Calendar cal = Calendar.getInstance();
+		cal.set(2015, Calendar.JANUARY, 25, 14, 53, 12);
+		
+		DateFormatObject obj = new DateFormatObject();
+		System.out.println(obj);
+		obj.init(cal);
+		String json = Json.toJson(obj);
+		System.out.println(json);
+		
+		DateFormatObject obj2 = Json.toObject(json, DateFormatObject.class);
+		System.out.println(obj2);
+		
+		Assert.assertThat(obj2.title, is(obj.title));
+		
+		Calendar calDateDefault = Calendar.getInstance();
+		calDateDefault.setTime(obj2.getDateDefault());
+		Assert.assertThat(calDateDefault.get(Calendar.YEAR), is(cal.get(Calendar.YEAR)));
+		Assert.assertThat(calDateDefault.get(Calendar.MONTH), is(cal.get(Calendar.MONTH)));
+		Assert.assertThat(calDateDefault.get(Calendar.DAY_OF_MONTH), is(cal.get(Calendar.DAY_OF_MONTH)));
+		Assert.assertThat(calDateDefault.get(Calendar.HOUR_OF_DAY), is(cal.get(Calendar.HOUR_OF_DAY)));
+		Assert.assertThat(calDateDefault.get(Calendar.MINUTE), is(cal.get(Calendar.MINUTE)));
+		Assert.assertThat(calDateDefault.get(Calendar.SECOND), is(cal.get(Calendar.SECOND)));
+		
+		Calendar dateFieldDefaultFormat = Calendar.getInstance();
+		dateFieldDefaultFormat.setTime(obj2.getDateFieldDefaultFormat());
+		Assert.assertThat(dateFieldDefaultFormat.get(Calendar.YEAR), is(cal.get(Calendar.YEAR)));
+		Assert.assertThat(dateFieldDefaultFormat.get(Calendar.MONTH), is(cal.get(Calendar.MONTH)));
+		Assert.assertThat(dateFieldDefaultFormat.get(Calendar.DAY_OF_MONTH), is(cal.get(Calendar.DAY_OF_MONTH)));
+		Assert.assertThat(dateFieldDefaultFormat.get(Calendar.HOUR_OF_DAY), is(cal.get(Calendar.HOUR_OF_DAY)));
+		Assert.assertThat(dateFieldDefaultFormat.get(Calendar.MINUTE), is(cal.get(Calendar.MINUTE)));
+		Assert.assertThat(dateFieldDefaultFormat.get(Calendar.SECOND), is(cal.get(Calendar.SECOND)));
+
+		Calendar dateFieldTimestamp = Calendar.getInstance();
+		dateFieldTimestamp.setTime(obj2.getDateFieldTimestamp());
+		Assert.assertThat(dateFieldTimestamp.get(Calendar.YEAR), is(cal.get(Calendar.YEAR)));
+		Assert.assertThat(dateFieldTimestamp.get(Calendar.MONTH), is(cal.get(Calendar.MONTH)));
+		Assert.assertThat(dateFieldTimestamp.get(Calendar.DAY_OF_MONTH), is(cal.get(Calendar.DAY_OF_MONTH)));
+		Assert.assertThat(dateFieldTimestamp.get(Calendar.HOUR_OF_DAY), is(cal.get(Calendar.HOUR_OF_DAY)));
+		Assert.assertThat(dateFieldTimestamp.get(Calendar.MINUTE), is(cal.get(Calendar.MINUTE)));
+		Assert.assertThat(dateFieldTimestamp.get(Calendar.SECOND), is(cal.get(Calendar.SECOND)));
+
+		Calendar dateFieldFormat1 = Calendar.getInstance();
+		dateFieldFormat1.setTime(obj2.dateFieldFormat1);
+		Assert.assertThat(dateFieldFormat1.get(Calendar.YEAR), is(cal.get(Calendar.YEAR)));
+		Assert.assertThat(dateFieldFormat1.get(Calendar.MONTH), is(cal.get(Calendar.MONTH)));
+		Assert.assertThat(dateFieldFormat1.get(Calendar.DAY_OF_MONTH), is(cal.get(Calendar.DAY_OF_MONTH)));
+		Assert.assertThat(dateFieldFormat1.get(Calendar.HOUR_OF_DAY), is(cal.get(Calendar.HOUR_OF_DAY)));
+		Assert.assertThat(dateFieldFormat1.get(Calendar.MINUTE), is(cal.get(Calendar.MINUTE)));
+		Assert.assertThat(dateFieldFormat1.get(Calendar.SECOND), is(cal.get(Calendar.SECOND)));
+		
+		Calendar cal2 = Calendar.getInstance();
+		cal2.setTime(obj2.getDateMethodFormat());
+		Assert.assertThat(cal2.get(Calendar.YEAR), is(cal.get(Calendar.YEAR)));
+		Assert.assertThat(cal2.get(Calendar.MONTH), is(cal.get(Calendar.MONTH)));
+		Assert.assertThat(cal2.get(Calendar.DAY_OF_MONTH), is(cal.get(Calendar.DAY_OF_MONTH)));
+		Assert.assertThat(cal2.get(Calendar.HOUR_OF_DAY), is(0));
+		Assert.assertThat(cal2.get(Calendar.MINUTE), is(0));
+		Assert.assertThat(cal2.get(Calendar.SECOND), is(0));
+	}
+	
+	@Test
+	public void testSpecialPropertyObject() {
+		SpecialPropertyObject s = new SpecialPropertyObject();
+		System.out.println(s);
+		s.init();
+		String json = Json.toJson(s);
+		System.out.println(json);
+		
+		SpecialPropertyObject s2 = Json.toObject(json, SpecialPropertyObject.class);
+		System.out.println(s2);
+		
+		Assert.assertThat(s2.getiOS(), is(s.getiOS()));
+		Assert.assertThat(s2.getiPad(), is(s.getiPad()));
+		Assert.assertThat(s2.getiPhone(), is(s.getiPhone()));
+		Assert.assertThat(s2.isiText(), is(s.isiText()));
+		
+		Assert.assertThat(s2.aOS, is(s.aOS));
+		Assert.assertThat(s2.aPad, is(s.aPad));
+		Assert.assertThat(s2.aPhone, is(s.aPhone));
+		Assert.assertThat(s2.aText, is(s.aText));
+	}
+	
+	@Test
+	public void testRuntimeSerialization() {
+		Book book = new Book();
+		book.setPrice(10.0);
+		book.setId(331);
+		book.setText("very good");
+		book.setSell(true);
+		book.setTitle("gook book");
+		System.out.println(Json.toJson(book));
+		
+		TestBook t = new TestBook();
+		t.setObj(new Object());
+		t.setBook(book);
+		String t0 = Json.toJson(t);
+		JsonObject o = Json.toJsonObject(t0);
+		Assert.assertThat(o.getJsonObject("book").getInteger("id"), is(331));
+		Assert.assertThat(o.getJsonObject("obj"), nullValue());
+		
+		t = new TestBook();
+		t.setObj(book);
+		t.setBook(book);
+		String t1 = Json.toJson(t);
+		o = Json.toJsonObject(t1);
+		Assert.assertThat(o.getJsonObject("book").getInteger("id"), is(331));
+		Assert.assertThat(o.getJsonObject("obj").getInteger("id"), is(331));
+
+		t.setObj(new Object());
+		String t2 = Json.toJson(t);
+		o = Json.toJsonObject(t2);
+		Assert.assertThat(o.getJsonObject("book").getInteger("id"), is(331));
+		Assert.assertThat(o.getJsonObject("obj"), nullValue());
+
+		t.setObj(book);
+		String t3 = Json.toJson(t);
+		o = Json.toJsonObject(t3);
+		Assert.assertThat(o.getJsonObject("book").getInteger("id"), is(331));
+		Assert.assertThat(o.getJsonObject("obj").getInteger("id"), is(331));
+
+		TestBook2<Book> tb2 = new TestBook2<Book>();
+		tb2.setObj(book);
+		tb2.setBook(null);
+		String t4 = Json.toJson(tb2);
+		o = Json.toJsonObject(t4);
+		Assert.assertThat(o.getJsonObject("book"), nullValue());
+		Assert.assertThat(o.getJsonObject("obj").getInteger("id"), is(331));
+		
+		tb2.setObj(book);
+		String t5 = Json.toJson(tb2);
+		o = Json.toJsonObject(t5);
+		Assert.assertThat(o.getJsonObject("book"), nullValue());
+		Assert.assertThat(o.getJsonObject("obj").getInteger("id"), is(331));
+		
+		TestBook2<Object> tb3 = new TestBook2<Object>();
+		tb3.setObj(book);
+		tb3.setBook(book);
+		String t6 = Json.toJson(tb3);
+		o = Json.toJsonObject(t6);
+		Assert.assertThat(o.getJsonObject("book").getInteger("id"), is(331));
+		Assert.assertThat(o.getJsonObject("obj").getInteger("id"), is(331));
+	}
+	
+	public static void main3(String[] args) {
+		String json = "{  \"key1\":333, \"arrayKey\":[444, \"array\"], \"key2\" :  {\"key3\" : \"hello\", \"key4\":\"world\" }, \"booleanKey\" : true }   ";
+		JsonObject jsonObject = Json.toJsonObject(json);
+		System.out.println(jsonObject.getJsonArray("arrayKey"));
+		System.out.println(jsonObject.getJsonObject("key2").getString("key4"));
+	}
+	
+	public static void main4(String[] args) {
+		Date date = new Date();
+		System.out.println(date.getClass() == Date.class);
+		System.out.println(Date.class.isAssignableFrom(java.sql.Date.class));
+		System.out.println(date.getClass() == new Date().getClass());
+	}
+	
+	public static void main5(String[] args) {
+		Calendar cal = Calendar.getInstance();
+		cal.set(2015, Calendar.JANUARY, 25, 14, 53, 12);
+		System.out.println(cal.get(Calendar.HOUR_OF_DAY));
+		
+		DateFormatObject obj = new DateFormatObject();
+		System.out.println(obj);
+		obj.init(cal);
+		String json = Json.toJson(obj);
+		System.out.println(json);
+		
+		DateFormatObject obj2 = Json.toObject(json, DateFormatObject.class);
+		System.out.println(obj2);
+	}
+	
+	public static void main6(String[] args) {
+		SpecialPropertyObject s = new SpecialPropertyObject();
+		System.out.println(s);
+		s.init();
+		String json = Json.toJson(s);
+		System.out.println(json);
+		
+		SpecialPropertyObject s2 = Json.toObject(json, SpecialPropertyObject.class);
+		System.out.println(s2);
+	}
+	
 	public static void main(String[] args) {
+		new TestParser().test2();
+	}
+	
+	public static void main2(String[] args) {
 //		new TestParser().testBigNumber();
 //		Bar[] arr = Json.toObject("[]", Bar[].class);
 //		System.out.println(arr);
 		
-		char ch = (char)31, 
-				ch1 = (char)1, 
-				ch2 = (char)0,
-				ch3 = (char)15,
-				ch4 = (char)16;
-		
-		System.out.println(JsonStringWriter.escapeSpecialCharacter(ch3));
+//		char ch = (char)31, 
+//			ch1 = (char)1, 
+//			ch2 = (char)0,
+//			ch3 = (char)15,
+//			ch4 = (char)16;
+//		System.out.println(JsonStringWriter.escapeSpecialCharacter(ch3));
 		
 	}
 

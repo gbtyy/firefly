@@ -10,6 +10,8 @@ import javax.net.ssl.SSLEngine;
 import javax.net.ssl.SSLEngineResult;
 import javax.net.ssl.SSLEngineResult.HandshakeStatus;
 
+import org.eclipse.jetty.alpn.ALPN;
+
 import com.firefly.net.Session;
 import com.firefly.net.buffer.FileRegion;
 import com.firefly.utils.log.Log;
@@ -17,24 +19,30 @@ import com.firefly.utils.log.LogFactory;
 
 public class SSLSession implements Closeable {
 	
-	private static Log log = LogFactory.getInstance().getLog("firefly-system");
+	protected static final Log log = LogFactory.getInstance().getLog("firefly-system");
 	
-	private Session session;
-	private SSLEngine sslEngine;
+	protected final Session session;
+	protected final SSLEngine sslEngine;
 	
-	private ByteBuffer inNetBuffer;
+	protected ByteBuffer inNetBuffer;
     protected ByteBuffer requestBuffer;
     
-    private static final int requestBufferSize = 1024 * 8;
-    private static final int writeBufferSize = 1024 * 8;
+    protected static final int requestBufferSize = 1024 * 8;
+    protected static final int writeBufferSize = 1024 * 8;
     
     /*
      * An empty ByteBuffer for use when one isn't available, say
      * as a source buffer during initial handshake wraps or for close
      * operations.
      */
-    private static final ByteBuffer hsBuffer = ByteBuffer.allocate(0);
+    protected static final ByteBuffer hsBuffer = ByteBuffer.allocate(0);
 
+    /*
+     * We have received the shutdown request by our caller, and have
+     * closed our outbound side.
+     */
+    protected boolean closed = false;
+    
     /*
      * During our initial handshake, keep track of the next
      * SSLEngine operation that needs to occur:
@@ -44,23 +52,35 @@ public class SSLSession implements Closeable {
      * Once the initial handshake has completed, we can short circuit
      * handshake checks with initialHSComplete.
      */
-    private HandshakeStatus initialHSStatus;
-    private boolean initialHSComplete;
-
-    /*
-     * We have received the shutdown request by our caller, and have
-     * closed our outbound side.
-     */
-    private boolean closed = false;
+    protected HandshakeStatus initialHSStatus;
     
-    public SSLSession(SSLContext sslContext, Session session) throws Throwable {
+    protected boolean initialHSComplete;
+    
+    protected final SSLEventHandler sslEventHandler;
+    
+    public SSLSession(SSLContext sslContext, Session session, boolean useClientMode, SSLEventHandler sslEventHandler) throws Throwable {
+    	this(sslContext, sslContext.createSSLEngine(), session, useClientMode, sslEventHandler, null);
+    }
+    
+    public SSLSession(SSLContext sslContext, SSLEngine sslEngine, Session session, boolean useClientMode, SSLEventHandler sslEventHandler, ALPN.Provider provider) throws Throwable {
     	this.session = session;
     	requestBuffer = ByteBuffer.allocate(requestBufferSize);
+    	initialHSComplete = false;
+    	this.sslEventHandler = sslEventHandler;
     	
-        sslEngine = sslContext.createSSLEngine();
-        sslEngine.setUseClientMode(false);
-        initialHSStatus = HandshakeStatus.NEED_UNWRAP;
-        initialHSComplete = false;
+    	if(provider != null) {
+//        	ALPN.debug = true;
+        	ALPN.put(sslEngine, provider);
+        }
+    	
+    	this.sslEngine = sslEngine;
+        this.sslEngine.setUseClientMode(useClientMode);
+        this.sslEngine.beginHandshake();
+        initialHSStatus = sslEngine.getHandshakeStatus();
+        
+        if(useClientMode) {
+        	doHandshakeResponse();
+        }
     }
     
     /**
@@ -70,7 +90,7 @@ public class SSLSession implements Closeable {
      * @return True means handshake success
      * @throws Throwable A runtime exception
      */
-    public boolean doHandshake(ByteBuffer receiveBuffer) throws Throwable {
+    protected boolean doHandshake(ByteBuffer receiveBuffer) throws Throwable {
     	if(!session.isOpen()) {
     		sslEngine.closeInbound();
         	return (initialHSComplete = false);
@@ -81,7 +101,9 @@ public class SSLSession implements Closeable {
         
         if(initialHSStatus == HandshakeStatus.FINISHED) {
         	log.info("session {} handshake success!", session.getSessionId());
-        	return (initialHSComplete = true);
+        	initialHSComplete = true;
+        	sslEventHandler.handshakeFinished(this);
+        	return initialHSComplete;
         }
         
         switch (initialHSStatus) {
@@ -100,23 +122,6 @@ public class SSLSession implements Closeable {
         return initialHSComplete;
     }
     
-    private void merge(ByteBuffer now) {
-    	if(!now.hasRemaining())
-    		return;
-    	
-    	if(inNetBuffer != null) {
-    		if(inNetBuffer.hasRemaining()) {
-	    		ByteBuffer ret = ByteBuffer.allocate(inNetBuffer.remaining() + now.remaining());
-	    		ret.put(inNetBuffer).put(now).flip();
-	    		inNetBuffer = ret;
-    		} else {
-    			inNetBuffer = now;
-    		}
-    	} else {
-    		inNetBuffer = now;
-    	}
-    }
-    
     private void doHandshakeReceive(ByteBuffer receiveBuffer) throws Throwable {
     	SSLEngineResult result;
     	
@@ -129,7 +134,7 @@ public class SSLSession implements Closeable {
             while(true) {
 	            result = sslEngine.unwrap(inNetBuffer, requestBuffer);
 	            initialHSStatus = result.getHandshakeStatus();
-	
+	            log.debug("do hs receive initial status -> {} | {} | {}", initialHSStatus, result.getStatus(), initialHSComplete);
 	            switch (result.getStatus()) {
 	            case OK:
 	                switch (initialHSStatus) {
@@ -143,6 +148,7 @@ public class SSLSession implements Closeable {
 	                case FINISHED:
 	                	log.info("session {} handshake success!", session.getSessionId());
 	                    initialHSComplete = true;
+	                    sslEventHandler.handshakeFinished(this);
 	                    break needIO;
 					default:
 						break;
@@ -171,7 +177,7 @@ public class SSLSession implements Closeable {
         }  // "needIO" block.
     }
     
-    private void doHandshakeResponse() throws Throwable {
+    protected void doHandshakeResponse() throws Throwable {
     	while(initialHSStatus == HandshakeStatus.NEED_WRAP) {
 	    	SSLEngineResult result;
 	    	ByteBuffer writeBuf = ByteBuffer.allocate(writeBufferSize);
@@ -179,9 +185,8 @@ public class SSLSession implements Closeable {
 	    	wrap:
 	    	while(true) {
 		        result = sslEngine.wrap(hsBuffer, writeBuf);
-		
 		        initialHSStatus = result.getHandshakeStatus();
-		
+		        log.debug("do hs response initial status -> {} | {} | {}", initialHSStatus, result.getStatus(), initialHSComplete);
 		        switch (result.getStatus()) {
 		        case OK:
 		            if (initialHSStatus == HandshakeStatus.NEED_TASK)
@@ -201,14 +206,62 @@ public class SSLSession implements Closeable {
 		        	break;
 		
 		        default: // BUFFER_OVERFLOW/BUFFER_UNDERFLOW/CLOSED:
-		            throw new IOException("Received" + result.getStatus() + "during initial handshaking");
+		            throw new IOException("Received " + result.getStatus() + " during initial handshaking");
 		        }
 	    	}
     	}
     }
     
+    protected void merge(ByteBuffer now) {
+    	if(!now.hasRemaining())
+    		return;
+    	
+    	if(inNetBuffer != null) {
+    		if(inNetBuffer.hasRemaining()) {
+	    		ByteBuffer ret = ByteBuffer.allocate(inNetBuffer.remaining() + now.remaining());
+	    		ret.put(inNetBuffer).put(now).flip();
+	    		inNetBuffer = ret;
+    		} else {
+    			inNetBuffer = now;
+    		}
+    	} else {
+    		inNetBuffer = now;
+    	}
+    }
+    
+    protected ByteBuffer getRequestBuffer() {
+    	requestBuffer.flip();
+    	ByteBuffer buf = ByteBuffer.allocate(requestBuffer.remaining());
+    	buf.put(requestBuffer).flip();
+    	requestBuffer = ByteBuffer.allocate(requestBufferSize);
+	    return buf;
+    }
+    
     /**
-     * This method is used to decrypt, it implied do handshake
+     * Do all the outstanding handshake tasks in the current Thread.
+     * @return The result of handshake
+     */
+    protected SSLEngineResult.HandshakeStatus doTasks() {
+        Runnable runnable;
+        
+        // We could run this in a separate thread, but do in the current for now.
+        while ((runnable = sslEngine.getDelegatedTask()) != null) {
+            runnable.run();
+        }
+        return sslEngine.getHandshakeStatus();
+    }
+
+	@Override
+	public void close() throws IOException {
+		if (!closed) {
+//			log.debug("close SSL engine, {}|{}", sslEngine.isInboundDone(), sslEngine.isOutboundDone());
+			sslEngine.closeOutbound();
+            closed = true;
+        }
+	}
+	
+	/**
+     * This method is used to decrypt data, it implied do handshake
      * @param receiveBuffer
      * 				Encrypted message
      * @return plaintext
@@ -217,6 +270,11 @@ public class SSLSession implements Closeable {
     public ByteBuffer read(ByteBuffer receiveBuffer) throws Throwable {
     	if(!doHandshake(receiveBuffer))
 			return null;
+    	
+    	if (!initialHSComplete)
+            throw new IllegalStateException("The initial handshake is not complete.");
+    	
+    	log.debug("SSL read current session {} status -> {}", session.getSessionId(), session.isOpen());
     		
     	merge(receiveBuffer);
     	if(!inNetBuffer.hasRemaining())
@@ -262,8 +320,8 @@ public class SSLSession implements Closeable {
             }
         }
     }
-    
-    /**
+	
+	/**
      * This method is used to encrypt and flush to socket channel
      * @param outputBuffer 
      * 				Plaintext message
@@ -272,7 +330,7 @@ public class SSLSession implements Closeable {
      */
     public int write(ByteBuffer outputBuffer) throws Throwable {
     	if (!initialHSComplete)
-            throw new IllegalStateException();
+            throw new IllegalStateException("The initial handshake is not complete.");
     	
     	int ret = 0;
     	if(!outputBuffer.hasRemaining())
@@ -341,8 +399,9 @@ public class SSLSession implements Closeable {
             throw new IllegalStateException();
 
     	long ret = 0;
+    	int bufferSize = 1024 * 8;
     	try {
-	    	ByteBuffer buf = ByteBuffer.allocate(1024 * 4);
+	    	ByteBuffer buf = ByteBuffer.allocate(bufferSize);
 	    	int i = 0;
 	    	while((i = fc.read(buf, pos)) != -1) {
 	    		if(i > 0) {
@@ -350,10 +409,9 @@ public class SSLSession implements Closeable {
 	    			pos += i;
 	    			buf.flip();
 	    			write(buf);
-	    			buf = ByteBuffer.allocate(1024 * 4);
+	    			buf = ByteBuffer.allocate(bufferSize);
 	    		}
-	    		
-	    		if(pos >= len)
+	    		if(ret >= len)
 	    			break;
 	    	}
     	} finally {
@@ -362,7 +420,7 @@ public class SSLSession implements Closeable {
     	return ret;
     }
     
-    public long transferFileRegion(FileRegion file) throws Throwable {
+	public long transferFileRegion(FileRegion file) throws Throwable {
     	long ret = 0;
     	try {
     		ret = transferTo(file.getFile(), file.getPosition(), file.getCount());
@@ -371,35 +429,4 @@ public class SSLSession implements Closeable {
     	}
     	return ret;
     }
-    
-    protected ByteBuffer getRequestBuffer() {
-    	requestBuffer.flip();
-    	ByteBuffer buf = ByteBuffer.allocate(requestBuffer.remaining());
-    	buf.put(requestBuffer).flip();
-    	requestBuffer = ByteBuffer.allocate(requestBufferSize);
-	    return buf;
-    }
-    
-    /**
-     * Do all the outstanding handshake tasks in the current Thread.
-     * @return The result of handshake
-     */
-    protected SSLEngineResult.HandshakeStatus doTasks() {
-        Runnable runnable;
-        
-        // We could run this in a separate thread, but do in the current for now.
-        while ((runnable = sslEngine.getDelegatedTask()) != null) {
-            runnable.run();
-        }
-        return sslEngine.getHandshakeStatus();
-    }
-
-	@Override
-	public void close() throws IOException {
-		if (!closed) {
-            sslEngine.closeOutbound();
-            closed = true;
-        }
-	} 
-    
 }

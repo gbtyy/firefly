@@ -9,20 +9,25 @@ import java.util.Map;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.locks.Lock;
+import java.util.concurrent.locks.ReentrantLock;
 
 import com.firefly.utils.collection.IdentityHashMap;
 import com.firefly.utils.json.JsonWriter;
 import com.firefly.utils.json.Serializer;
 import com.firefly.utils.json.annotation.CircularReferenceCheck;
+import com.firefly.utils.json.annotation.DateFormat;
 
 abstract public class SerialStateMachine {
 	private static final IdentityHashMap<Class<?>, Serializer> SERIAL_MAP = new IdentityHashMap<Class<?>, Serializer>();
-
+	private static final Lock lock = new ReentrantLock();
+	
 	private static final Serializer MAP = new MapSerializer();
 	private static final Serializer COLLECTION = new CollectionSerializer();
 	private static final Serializer ARRAY = new ArraySerializer();
 	private static final DynamicObjectSerializer DYNAMIC = new DynamicObjectSerializer();
 	private static final StringValueSerializer STRING_VALUE = new StringValueSerializer();
+	private static final TimestampSerializer TIMESTAMP = new TimestampSerializer();
 
 	static {
 		SERIAL_MAP.put(long.class, new LongSerializer());
@@ -70,44 +75,47 @@ abstract public class SerialStateMachine {
 		SERIAL_MAP.put(AtomicBoolean.class, STRING_VALUE);
 	}
 
-	public static Serializer getSerializer(Class<?> clazz) {
-		Serializer ret = SERIAL_MAP.get(clazz);
-		if (ret == null) {
-			if (clazz.isEnum())
-				ret = new EnumSerializer(clazz);
-			else if (Map.class.isAssignableFrom(clazz))
-				ret = MAP;
-			else if (Collection.class.isAssignableFrom(clazz))
-				ret = COLLECTION;
-			else if (clazz.isArray())
-				ret = ARRAY;
-			else
-				ret = clazz.isAnnotationPresent(CircularReferenceCheck.class) ? new ObjectSerializer(
-						clazz) : new ObjectNoCheckSerializer(clazz);
-			SERIAL_MAP.put(clazz, ret);
+	public static Serializer getSerializer(Class<?> clazz, DateFormat dateFormat) {
+		lock.lock();
+		try {
+			Serializer ret = SERIAL_MAP.get(clazz);
+			if (dateFormat != null && (clazz == Date.class || Date.class.isAssignableFrom(clazz))) {
+				switch (dateFormat.type()) {
+				case DATE_PATTERN_STRING:
+					ret = new DateSerializer(dateFormat.value());
+					break;
+				case TIMESTAMP:
+					ret = TIMESTAMP;
+					break;
+				default:
+					break;
+				}
+			} else if (ret == null) {
+				if (clazz.isEnum())
+					ret = new EnumSerializer(clazz);
+				else if (Map.class.isAssignableFrom(clazz))
+					ret = MAP;
+				else if (Collection.class.isAssignableFrom(clazz))
+					ret = COLLECTION;
+				else if (clazz.isArray())
+					ret = ARRAY;
+				else if (clazz.equals(Object.class))
+					ret = DYNAMIC;
+				else
+					ret = clazz.isAnnotationPresent(CircularReferenceCheck.class) ? new ObjectSerializer() : new ObjectNoCheckSerializer();
+					
+				SERIAL_MAP.put(clazz, ret);
+				
+				if(ret instanceof ObjectNoCheckSerializer) {
+					((ObjectNoCheckSerializer)ret).init(clazz);
+				} else if(ret instanceof ObjectSerializer) {
+					((ObjectSerializer)ret).init(clazz);
+				}
+			}
+			return ret;
+		} finally {
+			lock.unlock();
 		}
-		return ret;
-	}
-	
-	public static Serializer getSerializerInCompiling(Class<?> clazz) {
-		Serializer ret = SERIAL_MAP.get(clazz);
-		if (ret == null || ret instanceof ObjectSerializer || ret instanceof ObjectNoCheckSerializer) {
-			if (clazz.isEnum()) {
-				ret = new EnumSerializer(clazz);
-				SERIAL_MAP.put(clazz, ret);
-			} else if (Map.class.isAssignableFrom(clazz)) {
-				ret = MAP;
-				SERIAL_MAP.put(clazz, ret);
-			} else if (Collection.class.isAssignableFrom(clazz)) {
-				ret = COLLECTION;
-				SERIAL_MAP.put(clazz, ret);
-			} else if (clazz.isArray()) {
-				ret = ARRAY;
-				SERIAL_MAP.put(clazz, ret);
-			} else
-				ret = DYNAMIC;
-		}
-		return ret;
 	}
 
 	public static void toJson(Object obj, JsonWriter writer) throws IOException {
@@ -117,7 +125,7 @@ abstract public class SerialStateMachine {
 		}
 
 		Class<?> clazz = obj.getClass();
-		Serializer serializer = getSerializer(clazz);
+		Serializer serializer = getSerializer(clazz, null);
 		serializer.convertTo(writer, obj);
 	}
 }

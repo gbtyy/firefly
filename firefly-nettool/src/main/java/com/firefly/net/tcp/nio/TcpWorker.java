@@ -1,22 +1,24 @@
-package com.firefly.net.tcp;
+package com.firefly.net.tcp.nio;
 
 import static com.firefly.net.tcp.TcpPerformanceParameter.CLEANUP_INTERVAL;
-import static com.firefly.net.tcp.TcpPerformanceParameter.WRITE_SPIN_COUNT;
 import static com.firefly.net.tcp.TcpPerformanceParameter.IO_TIMEOUT_CHECK_INTERVAL;
+import static com.firefly.net.tcp.TcpPerformanceParameter.WRITE_SPIN_COUNT;
 
 import java.io.IOException;
 import java.net.SocketAddress;
+import java.net.StandardSocketOptions;
 import java.nio.ByteBuffer;
 import java.nio.channels.AsynchronousCloseException;
 import java.nio.channels.CancelledKeyException;
+import java.nio.channels.Channel;
 import java.nio.channels.ClosedChannelException;
-import java.nio.channels.SelectableChannel;
 import java.nio.channels.SelectionKey;
 import java.nio.channels.Selector;
 import java.nio.channels.SocketChannel;
 import java.util.Iterator;
 import java.util.Queue;
 import java.util.Set;
+import java.util.concurrent.LinkedTransferQueue;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 import com.firefly.net.Config;
@@ -30,12 +32,11 @@ import com.firefly.net.buffer.SocketReceiveBufferPool;
 import com.firefly.net.buffer.SocketSendBufferPool;
 import com.firefly.net.buffer.SocketSendBufferPool.SendBuffer;
 import com.firefly.net.exception.NetException;
-import com.firefly.utils.collection.LinkedTransferQueue;
 import com.firefly.utils.log.Log;
 import com.firefly.utils.log.LogFactory;
 import com.firefly.utils.time.Millisecond100Clock;
 
-public final class TcpWorker implements Worker {
+public final class TcpWorker implements Worker, Runnable {
 
 	private static Log log = LogFactory.getInstance().getLog("firefly-system");
 	
@@ -70,14 +71,13 @@ public final class TcpWorker implements Worker {
 		}
 	}
 
-	@Override
 	public int getWorkerId() {
 		return workerId;
 	}
 
 	@Override
-	public void registerSelectableChannel(SelectableChannel selectableChannel, int sessionId) {
-		SocketChannel socketChannel = (SocketChannel) selectableChannel;
+	public void registerChannel(Channel channel, int sessionId) {
+		SocketChannel socketChannel = (SocketChannel) channel;
 		registerTaskQueue.offer(new RegisterTask(socketChannel, sessionId));
 		if (wakenUp.compareAndSet(false, true))
 			selector.wakeup();
@@ -527,9 +527,9 @@ public final class TcpWorker implements Worker {
 			SelectionKey key = null;
 			try {
 				socketChannel.configureBlocking(false);
-				socketChannel.socket().setReuseAddress(true);
-				socketChannel.socket().setTcpNoDelay(false);
-				socketChannel.socket().setKeepAlive(true);
+				socketChannel.setOption(StandardSocketOptions.SO_REUSEADDR, true);
+				socketChannel.setOption(StandardSocketOptions.SO_KEEPALIVE, true);
+				socketChannel.setOption(StandardSocketOptions.TCP_NODELAY, false);
 
 				key = socketChannel.register(selector, SelectionKey.OP_READ);
 				TcpSession session = new TcpSession(sessionId, TcpWorker.this, config, Millisecond100Clock.currentTimeMillis(), key);
